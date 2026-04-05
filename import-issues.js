@@ -76,6 +76,29 @@ function mapStatus(state) {
   return 'todo'
 }
 
+async function createProject(org, repoData) {
+  var id = 'gh-repo-' + repoData.name
+  var project = {
+    '@id': '#project-' + id,
+    '@type': 'Project',
+    id: id,
+    name: repoData.name,
+    description: repoData.description || null,
+    status: repoData.archived ? 'archived' : 'active',
+    githubUrl: repoData.html_url,
+    githubRepo: repoData.name,
+    createdAt: repoData.created_at,
+    updatedAt: repoData.updated_at
+  }
+
+  var res = await fetch(API + '/projects/' + id, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/ld+json' },
+    body: JSON.stringify(project)
+  })
+  return id
+}
+
 async function importRepo(org, repo, prefix) {
   var issues = await getIssues(org, repo)
   if (issues.length === 0) return 0
@@ -95,7 +118,7 @@ async function importRepo(org, repo, prefix) {
       description: gh.body || null,
       status: mapStatus(gh.state),
       priority: mapPriority(gh.labels),
-      projectId: null,
+      projectId: 'gh-repo-' + repo,
       goalId: null,
       assigneeAgentId: null,
       githubUrl: gh.html_url,
@@ -133,6 +156,14 @@ if (!PREFIX) PREFIX = company.issuePrefix || ORG.slice(0, 3).toUpperCase()
 var repos = REPO ? [{ name: REPO }] : await getRepos(ORG)
 
 console.log('Importing: ' + ORG + (REPO ? '/' + REPO : ' (all ' + repos.length + ' repos)') + ' → ' + API + ' (' + STATE + ')')
+
+// Create projects from repos
+console.log('')
+console.log('Creating projects...')
+for (var r of repos) {
+  await createProject(ORG, r)
+  console.log('  ✓ ' + r.name)
+}
 
 var totalImported = 0
 for (var r of repos) {
