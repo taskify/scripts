@@ -1,0 +1,11 @@
+{
+  "name": "taskify-scripts",
+  "version": "0.0.1",
+  "description": "CLI scripts for Taskify — GitHub integration, data management, utilities",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/taskify/scripts.git"
+  }
+}
