@@ -3,10 +3,12 @@
 /**
  * Import GitHub issues into Taskify.
  *
- * Usage: node import-issues.js <repo> [--org taskify] [--prefix TF] [--state open]
+ * Usage: node import-issues.js [repo] [--org taskify] [--prefix TF] [--state open]
+ *
+ * If no repo is specified, imports from all repos in the org.
  */
 
-var REPO = process.argv[2]
+var REPO = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : null
 var ORG = null
 var PREFIX = null
 var STATE = 'open'
@@ -19,16 +21,30 @@ process.argv.forEach(function (arg, i) {
   if (arg === '--state' && process.argv[i + 1]) STATE = process.argv[i + 1]
 })
 
-if (!REPO) {
-  console.error('Usage: node import-issues.js <repo> [--org <org>] [--prefix <TF>] [--state open|closed|all]')
-  process.exit(1)
-}
-
 async function getCompany() {
   try {
     var res = await fetch(API + '/company/c1')
     return await res.json()
   } catch (e) { return {} }
+}
+
+async function getRepos(org) {
+  var page = 1
+  var repos = []
+  while (true) {
+    var res = await fetch('https://api.github.com/orgs/' + org + '/repos?per_page=100&page=' + page, {
+      headers: { 'Accept': 'application/vnd.github.v3+json' }
+    })
+    if (!res.ok) {
+      console.error('GitHub API error:', res.status, await res.text())
+      process.exit(1)
+    }
+    var batch = await res.json()
+    if (batch.length === 0) break
+    repos = repos.concat(batch)
+    page++
+  }
+  return repos
 }
 
 async function getIssues(org, repo) {
@@ -38,10 +54,7 @@ async function getIssues(org, repo) {
     var res = await fetch('https://api.github.com/repos/' + org + '/' + repo + '/issues?state=' + STATE + '&per_page=100&page=' + page, {
       headers: { 'Accept': 'application/vnd.github.v3+json' }
     })
-    if (!res.ok) {
-      console.error('GitHub API error:', res.status, await res.text())
-      process.exit(1)
-    }
+    if (!res.ok) return issues
     var batch = await res.json()
     if (batch.length === 0) break
     issues = issues.concat(batch)
@@ -63,63 +76,68 @@ function mapStatus(state) {
   return 'todo'
 }
 
+async function importRepo(org, repo, prefix) {
+  var issues = await getIssues(org, repo)
+  if (issues.length === 0) return 0
+
+  console.log('')
+  console.log(repo + ' (' + issues.length + ' issues)')
+
+  var imported = 0
+  for (var gh of issues) {
+    var id = 'gh-' + repo + '-' + gh.number
+    var issue = {
+      '@id': '#issue-' + id,
+      '@type': 'Issue',
+      id: id,
+      identifier: prefix + '-' + gh.number,
+      title: gh.title,
+      description: gh.body || null,
+      status: mapStatus(gh.state),
+      priority: mapPriority(gh.labels),
+      projectId: null,
+      goalId: null,
+      assigneeAgentId: null,
+      githubUrl: gh.html_url,
+      githubNumber: gh.number,
+      githubRepo: repo,
+      labels: gh.labels.map(function (l) { return l.name }),
+      createdAt: gh.created_at,
+      updatedAt: gh.updated_at
+    }
+
+    var res = await fetch(API + '/issues/' + id, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/ld+json' },
+      body: JSON.stringify(issue)
+    })
+
+    if (res.ok) {
+      console.log('  ✓ ' + issue.identifier + '  ' + issue.title)
+      imported++
+    } else {
+      console.log('  ✗ ' + issue.identifier + '  ' + issue.title + ' (' + res.status + ')')
+    }
+  }
+  return imported
+}
+
 var company = await getCompany()
 if (!ORG) ORG = company.githubOrg
 if (!ORG) {
   console.error('No GitHub org found. Use --org <name> or set it in Company Settings.')
   process.exit(1)
 }
-if (!PREFIX) PREFIX = company.issuePrefix || REPO.slice(0, 3).toUpperCase()
+if (!PREFIX) PREFIX = company.issuePrefix || ORG.slice(0, 3).toUpperCase()
 
-console.log('Importing: ' + ORG + '/' + REPO + ' → ' + API + ' (' + STATE + ')')
-console.log('')
+var repos = REPO ? [{ name: REPO }] : await getRepos(ORG)
 
-var issues = await getIssues(ORG, REPO)
+console.log('Importing: ' + ORG + (REPO ? '/' + REPO : ' (all ' + repos.length + ' repos)') + ' → ' + API + ' (' + STATE + ')')
 
-if (issues.length === 0) {
-  console.log('No issues to import.')
-  process.exit(0)
-}
-
-var imported = 0
-var skipped = 0
-
-for (var gh of issues) {
-  var id = 'gh-' + gh.number
-  var issue = {
-    '@id': '#issue-' + id,
-    '@type': 'Issue',
-    id: id,
-    identifier: PREFIX + '-' + gh.number,
-    title: gh.title,
-    description: gh.body || null,
-    status: mapStatus(gh.state),
-    priority: mapPriority(gh.labels),
-    projectId: null,
-    goalId: null,
-    assigneeAgentId: null,
-    githubUrl: gh.html_url,
-    githubNumber: gh.number,
-    githubRepo: REPO,
-    labels: gh.labels.map(function (l) { return l.name }),
-    createdAt: gh.created_at,
-    updatedAt: gh.updated_at
-  }
-
-  var res = await fetch(API + '/issues/' + id, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/ld+json' },
-    body: JSON.stringify(issue)
-  })
-
-  if (res.ok) {
-    console.log('  ✓ ' + issue.identifier + '  ' + issue.title)
-    imported++
-  } else {
-    console.log('  ✗ ' + issue.identifier + '  ' + issue.title + ' (' + res.status + ')')
-    skipped++
-  }
+var totalImported = 0
+for (var r of repos) {
+  totalImported += await importRepo(ORG, r.name, PREFIX)
 }
 
 console.log('')
-console.log('Done: ' + imported + ' imported, ' + skipped + ' failed')
+console.log('Done: ' + totalImported + ' issues imported across ' + repos.length + ' repos')
