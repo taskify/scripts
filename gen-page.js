@@ -29,7 +29,7 @@ var res = await fetch('https://api.z.ai/api/coding/paas/v4/chat/completions',{
   body:JSON.stringify({
     model:'glm-5',
     messages:[
-      {role:'system',content:'You generate complete, self-contained index.html files. Output ONLY the HTML, nothing else. No markdown code fences. No explanation.'},
+      {role:'system',content:'You generate complete, self-contained index.html files. Be visually creative — use color, gradients, visual hierarchy, and varied layouts. Each page should feel unique and engaging, not just a list of cards. Output ONLY the HTML, nothing else. No markdown code fences. No explanation.'},
       {role:'user',content:prompt}
     ]
   })

@@ -13,11 +13,15 @@ var THEME = process.argv[2]
 var API = 'http://localhost:3005/db/microblog'
 var AGENT = 'a1'
 var PREFIX = 'MB'
+var TITLE_PREFIX = 'Write a 400-600 char post: '
+var DESC = 'Just the post, nothing else. 400-600 characters.'
 
 process.argv.forEach(function (arg, i) {
   if (arg === '--api' && process.argv[i + 1]) API = process.argv[i + 1]
   if (arg === '--agent' && process.argv[i + 1]) AGENT = process.argv[i + 1]
   if (arg === '--prefix' && process.argv[i + 1]) PREFIX = process.argv[i + 1]
+  if (arg === '--title-prefix' && process.argv[i + 1]) TITLE_PREFIX = process.argv[i + 1]
+  if (arg === '--desc' && process.argv[i + 1]) DESC = process.argv[i + 1]
 })
 
 if (!THEME) {
@@ -66,12 +70,12 @@ var num = items.length + 1
 
 var id = 'i-' + Date.now()
 var now = new Date().toISOString()
-var title = 'Write a 400-600 char post: ' + topic
+var title = TITLE_PREFIX + topic
 var issue = {
   '@id': '#issue-' + id, '@type': 'Issue',
   id: id, identifier: PREFIX + '-' + num,
   title: title,
-  description: 'Just the post, nothing else. 400-600 characters.',
+  description: DESC,
   status: 'todo', priority: 'medium',
   projectId: null, goalId: null,
   assigneeAgentId: AGENT,
